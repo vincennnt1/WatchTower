@@ -1,0 +1,26 @@
+# Secrets
+.env
+
+# Claude Code local config
+.claude/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Source data (large CSVs, not needed for the web tool)
+*.csv
+
+# Root-level JSON artifacts (copies; canonical versions live in public/data/)
+/edges_by_year.json
+/edges_collapsed.json
+/hhi.json
+/nodes.json
+/spikes.json
+/trade_balance.json
+
+# OS
+.DS_Store
+Thumbs.db
