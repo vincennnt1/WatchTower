@@ -77,4 +77,4 @@ pip install pandas networkx community google-genai
 
 ## Live Demo
 
-[watch-tower-7cg9zptvv-vinny-projects1.vercel.app](https://watch-tower-7cg9zptvv-vinny-projects1.vercel.app)
+[watch-tower-jade-two.vercel.app/](https://watch-tower-jade-two.vercel.app/)
