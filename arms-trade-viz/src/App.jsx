@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from "react"
 import { LineChart, Line as RechartsLine, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
-import { ZoomableGroup } from "react-simple-maps"
 import {
   ComposableMap,
   Geographies,
   Geography,
   Marker,
-  Line,
+  ZoomableGroup,
+  useMapContext,
 } from "react-simple-maps"
 import "./App.css"
 
@@ -42,8 +42,8 @@ const COORDS = {
   "Singapore": [104, 1], "Philippines": [122, 13], "Taiwan": [121, 23],
   "New Zealand": [172, -42], "Portugal": [-8, 39], "Belgium": [4, 51],
   "Switzerland": [8, 47], "Austria": [14, 47], "Czechoslovakia": [16, 50],
-  "Yugoslavia": [20, 44], "East Germany": [13, 52],
-  "North Korea": [127, 40], "Cuba": [-80, 22], "Jordan": [36, 31],
+  "Yugoslavia": [20, 44], "East Germany (Gdr)": [13, 52],
+  "North Korea": [127, 40], "Cuba": [-80, 22],
   "Guyana": [-59, 5], "Trinidad and Tobago": [-61, 11],
   "Ecuador": [-78, -2], "Bolivia": [-65, -17], "Paraguay": [-58, -23],
   "Uruguay": [-56, -33], "Tunisia": [9, 34], "Cameroon": [12, 6],
@@ -62,7 +62,36 @@ const COORDS = {
   "Tajikistan": [71, 39], "Kyrgyzstan": [75, 41], "Mongolia": [105, 47],
   "Nepal": [84, 28], "Sri Lanka": [81, 8], "Laos": [103, 18],
   "Cambodia": [105, 13], "Brunei": [115, 4], "Papua New Guinea": [144, -6],
+  "Turkiye": [35, 39], "Viet Nam": [108, 16], "Cote D'Ivoire": [-6, 7],
+  "Trinidad And Tobago": [-61, 11], "Dr Congo": [24, -3],
+  "Albania": [20, 41], "Antigua And Barbuda": [-61.8, 17.1], "Aruba": [-69.9, 12.5],
+  "Bahamas": [-77.4, 25.0], "Barbados": [-59.5, 13.2], "Belize": [-88.5, 17.2],
+  "Benin": [2.3, 9.3], "Bhutan": [90.4, 27.5], "Bosnia-Herzegovina": [17.8, 44.2],
+  "Cabo Verde": [-24.0, 16.0], "Central African Republic": [20.9, 6.6],
+  "Comoros": [43.3, -11.6], "Costa Rica": [-84.0, 10.0],
+  "Dominican Republic": [-70.7, 19.0], "El Salvador": [-88.9, 13.8],
+  "Eswatini": [31.5, -26.5], "Fiji": [178.0, -18.0], "Gambia": [-15.3, 13.4],
+  "Grenada": [-61.7, 12.1], "Guatemala": [-90.2, 15.8], "Guinea-Bissau": [-15.2, 11.8],
+  "Haiti": [-73.1, 19.0], "Honduras": [-87.2, 15.2], "Jamaica": [-77.3, 18.1],
+  "Katanga": [26, -9], "Kosovo": [21.0, 42.6], "Lesotho": [28.2, -29.6],
+  "Madagascar": [46.9, -18.8], "Malawi": [34.3, -13.3], "Maldives": [73.5, 4.2],
+  "Mauritius": [57.6, -20.2], "Montenegro": [19.4, 42.8], "Nicaragua": [-85.2, 13.0],
+  "North Macedonia": [21.7, 41.6], "North Yemen": [44.0, 15.0],
+  "Northern Cyprus": [33.4, 35.2], "Palestine": [35.3, 31.9],
+  "Panama": [-80.8, 8.4], "Saint Kitts And Nevis": [-62.8, 17.3],
+  "Saint Vincent": [-61.2, 13.3], "Seychelles": [55.5, -4.6],
+  "Slovenia": [15.0, 46.1], "Solomon Islands": [159.9, -9.0],
+  "South Sudan": [31.3, 6.9], "South Vietnam": [107.0, 12.0],
+  "South Yemen": [46.5, 14.5], "Suriname": [-56.0, 4.0],
+  "Timor-Leste": [125.7, -8.9], "Togo": [0.8, 8.6], "Tonga": [-175.2, -21.2],
+  "Vanuatu": [167.0, -16.0], "Western Sahara": [-13.0, 24.5],
+  "Yemen Arab Republic (North Yemen)": [44.0, 15.0], "Biafra": [7, 5],
 }
+
+const HISTORICAL_COUNTRIES = new Set([
+  'Soviet Union', 'Yugoslavia', 'Czechoslovakia', 'East Germany (Gdr)',
+  'South Vietnam', 'South Yemen', 'North Yemen',
+])
 
 const CLUSTER_COLORS = {
   0: "#e05252",
@@ -70,6 +99,38 @@ const CLUSTER_COLORS = {
   2: "#52c98a",
   3: "#e0a852",
   "-1": "#666"
+}
+
+// Returns a control point perpendicular to the midpoint so arcs curve off the straight line
+function offsetControlPoint([x1, y1], [x2, y2], offset) {
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const len = Math.sqrt(dx * dx + dy * dy) || 1
+  return [mx - (dy / len) * offset, my + (dx / len) * offset]
+}
+
+// Draws a curved SVG arc between two geo coords with a filled dot near the destination as an arrowhead
+function DirectionalArc({ fromGeo, toGeo, stroke, strokeWidth, strokeOpacity }) {
+  const { projection } = useMapContext()
+  const from = projection(fromGeo)
+  const to = projection(toGeo)
+  if (!from || !to) return null
+  const offset = 20 + strokeWidth * 4
+  const [cx, cy] = offsetControlPoint(from, to, offset)
+  const d = `M ${from[0]},${from[1]} Q ${cx},${cy} ${to[0]},${to[1]}`
+  // point at t=0.82 on the quadratic bezier — clear of the destination node circle
+  const t = 0.95
+  const tx = (1-t)*(1-t)*from[0] + 2*(1-t)*t*cx + t*t*to[0]
+  const ty = (1-t)*(1-t)*from[1] + 2*(1-t)*t*cy + t*t*to[1]
+  return (
+    <g>
+      <path d={d} fill="none" stroke={stroke} strokeWidth={strokeWidth}
+        strokeOpacity={strokeOpacity} strokeLinecap="round" />
+      <circle cx={tx} cy={ty} r={Math.max(1.2, strokeWidth * 0.7)} fill={stroke} fillOpacity={0.85} />
+    </g>
+  )
 }
 
 export default function App() {
@@ -87,6 +148,7 @@ export default function App() {
   const [hhiData, setHhiData] = useState([])
   const [position, setPosition] = useState({ coordinates: [0, 20], zoom: 1 })
   const [selectedDecade, setSelectedDecade] = useState('all')
+  const [showHistorical, setShowHistorical] = useState(false)
 
   // ── Animation state & refs ─────────────────────────────────────────────────
   const [isPlaying, setIsPlaying] = useState(false)
@@ -121,6 +183,7 @@ export default function App() {
   }, [])
 
   // ── Animation logic ────────────────────────────────────────────────────────
+  // Clears the playback interval and marks animation as stopped
   const stopAnimation = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
@@ -129,6 +192,7 @@ export default function App() {
     setIsPlaying(false)
   }, [])
 
+  // Advances yearRange[1] by 1 every 150ms from startEnd up to 2023
   const startAnimation = useCallback((startEnd) => {
     stopAnimation()
     animEndRef.current = startEnd
@@ -143,6 +207,7 @@ export default function App() {
     }, 150)
   }, [stopAnimation])
 
+  // Toggles playback; rewinds end year to start if the range is already maxed out
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
       stopAnimation()
@@ -155,6 +220,7 @@ export default function App() {
     }
   }, [isPlaying, yearRange, stopAnimation, startAnimation])
 
+  // Stops animation and resets the year range back to 1940
   const handleReset = useCallback(() => {
     stopAnimation()
     setYearRange([1940, 1940])
@@ -170,6 +236,7 @@ export default function App() {
   }, [])
 
   // ── Cluster color ──────────────────────────────────────────────────────────
+  // Maps a node's cluster label to a hex color, using decade-specific labels when a decade is selected
   const getClusterColor = useCallback((node) => {
     const CLUSTER_COLORS_NAMED = {
       'Soviet/Eastern Bloc': '#e05252',
@@ -209,6 +276,7 @@ export default function App() {
   const handleMoveEnd = useCallback((pos) => setPosition(pos), [])
 
   // ── Derived data ───────────────────────────────────────────────────────────
+  // Aggregates year-filtered edges into per-pair TIV totals, sorted descending
   const filteredEdges = useMemo(() => {
     const [y1, y2] = yearRange
     const yearFiltered = edgesByYear.filter(e => {
@@ -221,9 +289,14 @@ export default function App() {
       if (!agg[key]) agg[key] = { supplier: e.supplier, recipient: e.recipient, tiv: 0 }
       agg[key].tiv += e.tiv
     })
-    return Object.values(agg).sort((a, b) => b.tiv - a.tiv)
-  }, [edgesByYear, yearRange])
+    let result = Object.values(agg).sort((a, b) => b.tiv - a.tiv)
+    if (!showHistorical) {
+      result = result.filter(e => !HISTORICAL_COUNTRIES.has(e.supplier) && !HISTORICAL_COUNTRIES.has(e.recipient))
+    }
+    return result
+  }, [edgesByYear, yearRange, showHistorical])
 
+  // Shows only edges involving the selected/compare country, or the top-N flows globally
   const visibleEdges = useMemo(() => {
     if (selected) {
       return filteredEdges.filter(e =>
@@ -234,12 +307,14 @@ export default function App() {
     return filteredEdges.slice(0, topN)
   }, [filteredEdges, selected, compareCountry, topN])
 
+  // country name → node object for O(1) lookups in the render
   const nodeMap = useMemo(() => {
     const m = {}
     nodes.forEach(n => m[n.country] = n)
     return m
   }, [nodes])
 
+  // Set of countries that appear in at least one visible edge (used to dim inactive nodes)
   const activeCountries = useMemo(() => {
     const s = new Set()
     visibleEdges.forEach(e => { s.add(e.supplier); s.add(e.recipient) })
@@ -300,22 +375,21 @@ export default function App() {
 
             {/* Arcs */}
             {visibleEdges.map((e, i) => {
-              const from = COORDS[e.supplier]
-              const to = COORDS[e.recipient]
-              if (!from || !to) return null
+              const fromGeo = COORDS[e.supplier]
+              const toGeo = COORDS[e.recipient]
+              if (!fromGeo || !toGeo) return null
               const maxTiv = filteredEdges[0]?.tiv || 1
               const w = 0.3 + (e.tiv / maxTiv) * 3
               const involvesCompare = compareCountry &&
                 (e.supplier === compareCountry || e.recipient === compareCountry)
               return (
-                <Line
+                <DirectionalArc
                   key={i}
-                  from={from}
-                  to={to}
+                  fromGeo={fromGeo}
+                  toGeo={toGeo}
                   stroke={involvesCompare ? "#c084fc" : "#58a6ff"}
                   strokeWidth={w}
                   strokeOpacity={0.4}
-                  strokeLinecap="round"
                 />
               )
             })}
@@ -324,6 +398,7 @@ export default function App() {
             {nodes.map(n => {
               const coords = COORDS[n.country]
               if (!coords) return null
+              if (!showHistorical && HISTORICAL_COUNTRIES.has(n.country)) return null
               const isActive = !selected || activeCountries.has(n.country)
               const maxExp = 865926
               const r = 2 + (n.total_exported / maxExp) * 10
@@ -446,6 +521,24 @@ export default function App() {
           {selectedDecade !== 'all' && (
             <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>
               Showing geopolitical blocs for {selectedDecade}
+            </div>
+          )}
+        </div>
+
+        {/* Historical states toggle */}
+        <div className="filter-group">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: '#e0e0e0' }}>
+            <input
+              type="checkbox"
+              checked={showHistorical}
+              onChange={e => setShowHistorical(e.target.checked)}
+              style={{ accentColor: '#58a6ff', cursor: 'pointer' }}
+            />
+            Show historical states
+          </label>
+          {showHistorical && (
+            <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>
+              Soviet Union, Yugoslavia, Czechoslovakia, East Germany, South/North Yemen, South Vietnam
             </div>
           )}
         </div>
