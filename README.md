@@ -1,4 +1,4 @@
-# Global Arms Trade Network (1940–2025)
+# Watch Tower (1940–2025)
 
 An interactive geopolitical visualization of 85 years of SIPRI arms transfer data. Explore how weapons flow between nations, how supplier-recipient blocs form and evolve across decades, and where sudden import spikes correlate with armed conflict.
 

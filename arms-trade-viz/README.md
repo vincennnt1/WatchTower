@@ -1,6 +1,6 @@
 # arms-trade-viz
 
-React + Vite frontend for the Global Arms Trade Network project.
+React + Vite frontend for the Watch Tower project.
 
 See the [root README](../README.md) for full project documentation, pipeline details, and setup instructions.
 

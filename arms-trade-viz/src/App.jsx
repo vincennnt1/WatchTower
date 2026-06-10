@@ -338,7 +338,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <h1>Global Arms Trade Network</h1>
+        <h1>Watch Tower</h1>
         <span>SIPRI Arms Transfers Database</span>
         <span style={{ marginLeft: "auto" }}>
           {visibleEdges.length} flows · {activeCountries.size} countries
